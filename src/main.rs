@@ -169,11 +169,11 @@ fn setup_physics(mut commands: Commands, assets: Res<AssetServer>) {
             assets.load("guy.png")
         ),
         PIXEL_PERFECT_LAYERS,
-        Transform::from_xyz(120.0, 200.0, 0.0),
+        Transform::from_xyz(120.0, 60.0, 0.0),
         Velocity::default(),
         Collider::cuboid(6.0, 8.0),
         // Restitution::coefficient(0.5),
-        RigidBody::KinematicVelocityBased,
+        RigidBody::KinematicPositionBased,
         Friction::coefficient(0.2),
         Damping {
             linear_damping: 0.2,
@@ -289,7 +289,7 @@ fn player_move(
     time: Res<Time>,
 )
 {
-    let a = r_context_mut.into_inner();
+    // let a = r_context_mut.into_inner();
 
     let gravity = r_config.gravity;
 
@@ -316,7 +316,8 @@ fn player_move(
         translation += init_vel.linvel * time.delta_secs();
 
         // *vel = init_vel;
-        player.translation = Some(translation / time.delta_secs());
+        // player.translation = Some([0.0, -1.0].into());
+        player.translation = Some(translation);
     }
 
     
@@ -332,7 +333,7 @@ fn ball_jump(
 
     if keyboard.just_pressed(KeyCode::Space)
     {
-        ball.linvel.y += 1000.0;
+        ball.linvel.y += 50.0;
         // commands.entity(ent).insert(ExternalImpulse::at_point([0.0, 100.0].into(), [0.0, 0.0].into(), transform.translation.xy()));
     }
 
