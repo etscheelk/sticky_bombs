@@ -1,24 +1,111 @@
-use bevy::{log::tracing_subscriber::filter::Targets, prelude::*};
-use bevy_rapier2d::{prelude::*, rapier::prelude::CollisionEventFlags};
+use bevy::prelude::*;
+use bevy::color::palettes::css::GRAY;
+use bevy::render::camera::RenderTarget;
+use bevy::render::render_resource::{Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages};
+use bevy::render::view::RenderLayers;
+
+use bevy::window::WindowResized;
+use bevy_rapier2d::rapier::prelude::CollisionEventFlags;
+use bevy_rapier2d::prelude::*;
 
 fn main() {
     App::new()
-    .add_plugins(DefaultPlugins)
-    .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+    .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+    .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(8.0))
     .add_plugins(RapierDebugRenderPlugin::default())
     .add_systems(Startup, setup_graphics)
     .add_systems(Startup, setup_physics)
-    .add_systems(Update, (print_ball_altitude, ball_jump, player_move))
+    .add_systems(Update, (print_ball_altitude, ball_jump, player_move, fit_canvas))
     .add_systems(Update, (diverge_collision_events, sensor_collision_events).chain())
     .run();
 }
 
-fn setup_graphics(mut commands: Commands) {
+const RES_WIDTH: f32 = 640.0;
+const RES_HEIGHT: f32 = 360.0;
+
+const PIXEL_PERFECT_LAYERS: RenderLayers = RenderLayers::layer(0);
+
+const HIGH_RES_LAYERS: RenderLayers = RenderLayers::layer(1);
+
+/// Low-resolution texture that contains the pixel-perfect world.
+/// Canvas itself is rendered to the high-resolution world.
+#[derive(Component)]
+struct Canvas;
+
+/// Camera that renders the pixel-perfect world to the [`Canvas`].
+#[derive(Component)]
+struct InGameCamera;
+
+/// Camera that renders the [`Canvas`] (and other graphics on [`HIGH_RES_LAYERS`]) to the screen.
+#[derive(Component)]
+struct OuterCamera;
+
+
+fn setup_graphics(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+) 
+{
     // Add a camera so we can see the debug-render.
-    commands.spawn(Camera2d::default());
+    // commands.spawn(Camera2d::default());
+    let canvas_size = Extent3d {
+        width: RES_WIDTH as u32,
+        height: RES_HEIGHT as u32,
+        ..default()
+    };
+
+    // This Image serves as a canvas representing the low-resolution game screen
+    let mut canvas = Image {
+        texture_descriptor: TextureDescriptor {
+            label: None,
+            size: canvas_size,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Bgra8UnormSrgb,
+            mip_level_count: 1,
+            sample_count: 1,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        },
+        ..default()
+    };
+
+    canvas.resize(canvas_size);
+
+    let image_handle = images.add(canvas);
+
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: -1,
+            target: RenderTarget::Image(image_handle.clone().into()),
+            clear_color: ClearColorConfig::Custom(GRAY.into()),
+            ..default()
+        },
+        Msaa::Off,
+        InGameCamera,
+        PIXEL_PERFECT_LAYERS,
+    ));
+
+    // spawn the canvas
+    commands.spawn((
+        Sprite::from_image(image_handle),
+        Canvas,
+        HIGH_RES_LAYERS,
+    ));
+
+    // The "outer" camera renders whatever is on `HIGH_RES_LAYERS` to the screen.
+    // here, the canvas and one of the sample sprites will be rendered by this camera
+    commands.spawn((
+        Camera2d, 
+        Msaa::Off, 
+        OuterCamera, 
+        HIGH_RES_LAYERS
+    ));
 }
 
-fn setup_physics(mut commands: Commands) {
+fn setup_physics(mut commands: Commands, assets: Res<AssetServer>) {
     /* Create the ground. */
     commands.spawn((
         Collider::cuboid(500.0, 50.0),
@@ -41,9 +128,9 @@ fn setup_physics(mut commands: Commands) {
         Ball,
         RigidBody::Dynamic,
         Velocity::default(),
-        Collider::ball(50.0),
+        Collider::ball(12.0),
         Restitution::coefficient(0.7),
-        Transform::from_xyz(0.0, 400.0, 0.0),
+        Transform::from_xyz(0.0, 200.0, 0.0),
         Friction::coefficient(0.5),
         Damping {
             linear_damping: 0.9,
@@ -52,13 +139,19 @@ fn setup_physics(mut commands: Commands) {
     ))
     .with_children(|ent|
     {
-        ent.spawn(BombPlaceSpotBundle::ball_with_radius(75.0));
-        ent.spawn((
-            Sprite::from_color(Color::Srgba(Srgba::RED), [20.0, 20.0].into()),
+        ent.spawn(BombPlaceSpotBundle::ball_with_radius(20.0))
+        .with_child((
+            Sprite::from_color(Color::Srgba(Srgba::RED), [8.0, 8.0].into()),
             Visibility::Hidden,
             Bomb,
             Transform::default(),
         ));
+        // ent.spawn((
+        //     Sprite::from_color(Color::Srgba(Srgba::RED), [20.0, 20.0].into()),
+        //     Visibility::Hidden,
+        //     Bomb,
+        //     Transform::default(),
+        // ));
     });
 
     commands.spawn((
@@ -72,9 +165,13 @@ fn setup_physics(mut commands: Commands) {
             }),
             ..Default::default()
         },
+        Sprite::from_image(
+            assets.load("guy.png")
+        ),
+        PIXEL_PERFECT_LAYERS,
         Transform::from_xyz(120.0, 200.0, 0.0),
         Velocity::default(),
-        Collider::cuboid(30.0, 60.0),
+        Collider::cuboid(6.0, 8.0),
         // Restitution::coefficient(0.5),
         RigidBody::KinematicVelocityBased,
         Friction::coefficient(0.2),
@@ -85,7 +182,7 @@ fn setup_physics(mut commands: Commands) {
     ))
     .with_children(|ent|
     {
-        ent.spawn(BombPlacerBundle::ball_with_radius(72.0));
+        ent.spawn(BombPlacerBundle::ball_with_radius(16.0));
         // ent.spawn((
         //     Sprite::from_color(Color::Srgba(Srgba::GREEN), [10.0, 10.0].into()),
         //     Visibility::Hidden,
@@ -104,6 +201,7 @@ struct SensorBundle
     active_events: ActiveEvents,
     collision_groups: CollisionGroups,
     transform: Transform,
+    visibility: Visibility
 }
 
 #[derive(Bundle, Clone, Debug)]
@@ -131,6 +229,7 @@ impl BombPlaceSpotBundle
                     Self::FILTERS,
                 ),
                 transform: Transform::default(),
+                visibility: Visibility::Inherited
             },
         }
     }
@@ -161,6 +260,7 @@ impl BombPlacerBundle
                     Self::FILTERS,
                 ),
                 transform: Transform::default(),
+                visibility: Visibility::Inherited
             },
         }
     }
@@ -208,7 +308,7 @@ fn player_move(
         }
         if keyboard.just_pressed(KeyCode::ArrowUp)
         {
-            init_vel.linvel.y += 100.0;
+            init_vel.linvel.y += 20.0;
         }
 
         init_vel.linvel += gravity * time.delta_secs();
@@ -288,14 +388,15 @@ enum SensorInteraction
 fn sensor_collision_events(
     mut sensor_events: EventReader<SensorEvent>,
     mut _commands: Commands,
-    bomb_placers: Query<Entity, With<BombPromixityPlacer>>,
+    bomb_placers: Query<(Entity, Option<&Children>), With<BombPromixityPlacer>>,
     // placer_imgs: Query<(Entity, &Children), With<BombPromixityPlacer>>,
-    mut bomb_img: Query<(&mut Visibility, &ChildOf), With<Bomb>>,
-    bomb_place_spots: Query<Entity, With<BombPlaceSpot>>,
+    mut bomb_img: Query<&mut Visibility, With<Bomb>>,
+    bomb_place_spots: Query<(Entity, Option<&Children>), With<BombPlaceSpot>>,
 )
 {
     for &SensorEvent(a, b, t) in sensor_events.read()
     {
+        
         // check if one type is able to place a bomb, and the other is a placeable area
         // If successful, do something.
         /*
@@ -313,20 +414,43 @@ fn sensor_collision_events(
         .or_else(|_| bomb_place_spots.get(a)).ok();
 
         #[allow(unused_variables)]
-        if let (Some(placer), Some(spot)) = (placer, spot)
+        if let (
+            Some((placer, placer_c)), 
+            Some((spot, spot_c))
+        ) = (placer, spot)
         {
-            for (mut vis, child_of) in bomb_img.iter_mut()
+            let Some(spot_c) = spot_c else { continue; };
+            for child in spot_c.iter()
             {
-                if child_of.parent() == spot
+                if let Ok(mut vis) = bomb_img.get_mut(child)
                 {
+
                     use SensorInteraction::*;
                     match t {
-                        Entered => *vis = Visibility::Visible,
-                        Exited => *vis = Visibility::Inherited,
+                        Entered => *vis = Visibility::Inherited,
+                        Exited => *vis = Visibility::Hidden,
                     }
                 }
             }
+            // println!("Found placer {:#?} and spot {:#?}", placer, spot);
         }
+
+        // child_of version
+        // #[allow(unused_variables)]
+        // if let (Some(placer), Some(spot)) = (placer, spot)
+        // {
+        //     for (mut vis, child_of) in bomb_img.iter_mut()
+        //     {
+        //         if child_of.parent() == spot
+        //         {
+        //             use SensorInteraction::*;
+        //             match t {
+        //                 Entered => *vis = Visibility::Visible,
+        //                 Exited => *vis = Visibility::Inherited,
+        //             }
+        //         }
+        //     }
+        // }
 
         // if let (Some((placer, placer_c)), Some((spot, spot_c))) = (placer, spot)
         // {
@@ -350,6 +474,23 @@ fn sensor_collision_events(
         // case 3: not interested in this event right now
     }
 }
+
+/// Scales camera projection to fit the window (integer multiples only).
+fn fit_canvas(
+    mut resize_events: EventReader<WindowResized>,
+    mut projection: Single<&mut Projection, With<OuterCamera>>,
+) 
+{
+    let Projection::Orthographic(projection) = &mut **projection else {
+        return;
+    };
+    for event in resize_events.read() {
+        let h_scale = event.width / RES_WIDTH as f32;
+        let v_scale = event.height / RES_HEIGHT as f32;
+        projection.scale = 1. / h_scale.min(v_scale).round();
+    }
+}
+
 
 fn print_ball_altitude(positions: Query<&Transform, With<Ball>>) 
 {
