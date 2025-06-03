@@ -3,14 +3,14 @@ use bevy_rapier2d::{prelude::*, rapier::prelude::CollisionEventFlags};
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(20.0))
-        .add_plugins(RapierDebugRenderPlugin::default())
-        .add_systems(Startup, setup_graphics)
-        .add_systems(Startup, setup_physics)
-        .add_systems(Update, (print_ball_altitude, ball_jump, player_move))
-        .add_systems(Update, (diverge_collision_events, sensor_collision_events).chain())
-        .run();
+    .add_plugins(DefaultPlugins)
+    .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+    .add_plugins(RapierDebugRenderPlugin::default())
+    .add_systems(Startup, setup_graphics)
+    .add_systems(Startup, setup_physics)
+    .add_systems(Update, (print_ball_altitude, ball_jump, player_move))
+    .add_systems(Update, (diverge_collision_events, sensor_collision_events).chain())
+    .run();
 }
 
 fn setup_graphics(mut commands: Commands) {
@@ -20,10 +20,6 @@ fn setup_graphics(mut commands: Commands) {
 
 fn setup_physics(mut commands: Commands) {
     /* Create the ground. */
-    // commands
-    //     .spawn(Collider::cuboid(500.0, 50.0))
-    //     .insert(Transform::from_xyz(0.0, -100.0, 0.0));
-
     commands.spawn((
         Collider::cuboid(500.0, 50.0),
         Transform::from_xyz(0.0, -100.0, 0.0),
@@ -38,14 +34,8 @@ fn setup_physics(mut commands: Commands) {
         RigidBody::Fixed,
         Friction::coefficient(0.5),
         Restitution::coefficient(0.5),
+        // Sprite::from_color(Color::Srgba(Srgba::RED), [20.0, 20.0].into()),
     ));
-
-    /* Create the bouncing ball. */
-    // commands
-    //     .spawn(RigidBody::Dynamic)
-    //     .insert(Collider::ball(50.0))
-    //     .insert(Restitution::coefficient(0.7))
-    //     .insert(Transform::from_xyz(0.0, 400.0, 0.0));
 
     commands.spawn((
         Ball,
@@ -62,44 +52,13 @@ fn setup_physics(mut commands: Commands) {
     ))
     .with_children(|ent|
     {
-        // ent.spawn((
-        //     BombPlaceSpot,
-        //     Sensor,
-        //     Collider::ball(75.0),
-        //     ActiveEvents::COLLISION_EVENTS,
-        //     CollisionGroups::new(
-        //         Group::GROUP_32, 
-        //         Group::GROUP_1 | Group::GROUP_2,
-        //     )
-        //     // Transform::from_xyz(0.0, 0.0, 0.0),
-        // ));
         ent.spawn(BombPlaceSpotBundle::ball_with_radius(75.0));
+        ent.spawn((
+            Sprite::from_color(Color::Srgba(Srgba::RED), [20.0, 20.0].into()),
+            Visibility::Hidden,
+            Bomb,
+        ));
     });
-    
-    // commands.spawn((
-    //     Player,
-    //     KinematicCharacterController {
-    //         apply_impulse_to_dynamic_bodies: true,
-    //         autostep: Some(CharacterAutostep {
-    //             include_dynamic_bodies: true,
-    //             max_height: CharacterLength::Relative(0.25),
-    //             min_width: CharacterLength::Relative(0.5),
-    //         }),
-    //         ..Default::default()
-    //     },
-    //     Transform::from_xyz(120.0, 200.0, 0.0),
-    //     Velocity::default(),
-    //     Collider::cuboid(30.0, 60.0),
-    //     // Restitution::coefficient(0.5),
-    //     RigidBody::KinematicVelocityBased,
-    //     Friction::coefficient(0.2),
-    //     Damping {
-    //         linear_damping: 0.2,
-    //         angular_damping: 0.2,
-    //     },
-    //     // ActiveEvents::COLLISION_EVENTS,
-    //     BombPromixityPlacer
-    // ));
 
     commands.spawn((
         Player,
@@ -126,6 +85,11 @@ fn setup_physics(mut commands: Commands) {
     .with_children(|ent|
     {
         ent.spawn(BombPlacerBundle::ball_with_radius(72.0));
+        // ent.spawn((
+        //     Sprite::from_color(Color::Srgba(Srgba::GREEN), [10.0, 10.0].into()),
+        //     Visibility::Hidden,
+        //     Bomb
+        // ));
     });
 
     commands.insert_resource(Events::<SensorEvent>::default());
@@ -209,6 +173,9 @@ struct Player;
 
 #[derive(Component, Clone, Copy, Debug)]
 struct BombPromixityPlacer;
+
+#[derive(Component, Clone, Copy, Debug)]
+struct Bomb;
 
 fn player_move(
     mut players: Query<(&mut KinematicCharacterController, &mut Velocity), With<Player>>,
@@ -303,7 +270,7 @@ fn diverge_collision_events(
 #[derive(Event, Clone, Copy, Debug)]
 struct SensorEvent(Entity, Entity, SensorInteraction);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SensorInteraction
 {
     Entered,
@@ -318,6 +285,8 @@ fn sensor_collision_events(
     mut sensor_events: EventReader<SensorEvent>,
     mut commands: Commands,
     bomb_placers: Query<Entity, With<BombPromixityPlacer>>,
+    // placer_imgs: Query<(Entity, &Children), With<BombPromixityPlacer>>,
+    mut bomb_img: Query<(Entity, &ChildOf, &mut Visibility), With<Bomb>>,
     bomb_place_spots: Query<Entity, With<BombPlaceSpot>>,
 )
 {
@@ -350,6 +319,44 @@ fn sensor_collision_events(
             println!("case 2");
             println!("Placer {:?} is near spot {:?}", placer, spot);
             println!("Sensor interaction: {:?}", t);
+
+            // println!("placer children? {:?}", placer_imgs.get(placer));
+            // if let Ok((e,c)) = placer_imgs.get(placer)
+            // {
+            //     println!("Children of placer: {:?}", c);
+            // }
+
+            println!("length of bomb_img query: {:?}", bomb_img.iter().len());
+
+            for (ent, child_of, mut vis) in bomb_img.iter_mut()
+            {
+                println!("child_of: {:?}", child_of);
+                // println!("child_of.parent(): {:?}", child_of.parent());
+
+                // if child_of.parent() == spot
+                {
+                    println!("Tried to change visibility");
+
+                    use SensorInteraction::*;
+                    match t
+                    {
+                        Entered => *vis = Visibility::Inherited,
+                        Exited => *vis = Visibility::Hidden,
+                    };
+                }
+            }
+
+            // if let Ok((_, mut vis)) = bomb_img.get_mut(spot)
+            // {
+            //     println!("Tried to change visibility");
+
+            //     use SensorInteraction::*;
+            //     match t
+            //     {
+            //         Entered => *vis = Visibility::Inherited,
+            //         Exited => *vis = Visibility::Hidden,
+            //     };
+            // }
         }
 
         // case 3: not interested in this event right now
