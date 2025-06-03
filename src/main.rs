@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{log::tracing_subscriber::filter::Targets, prelude::*};
 use bevy_rapier2d::{prelude::*, rapier::prelude::CollisionEventFlags};
 
 fn main() {
@@ -52,11 +52,12 @@ fn setup_physics(mut commands: Commands) {
     ))
     .with_children(|ent|
     {
-        ent.spawn(BombPlaceSpotBundle::ball_with_radius(75.0));
-        ent.spawn((
+        ent.spawn(BombPlaceSpotBundle::ball_with_radius(75.0))
+        .with_child((
             Sprite::from_color(Color::Srgba(Srgba::RED), [20.0, 20.0].into()),
             Visibility::Hidden,
             Bomb,
+            Transform::default(),
         ));
     });
 
@@ -102,6 +103,7 @@ struct SensorBundle
     collider: Collider,
     active_events: ActiveEvents,
     collision_groups: CollisionGroups,
+    transform: Transform,
 }
 
 #[derive(Bundle, Clone, Debug)]
@@ -128,6 +130,7 @@ impl BombPlaceSpotBundle
                     Self::MEMBERSHIPS, 
                     Self::FILTERS,
                 ),
+                transform: Transform::default(),
             },
         }
     }
@@ -157,6 +160,7 @@ impl BombPlacerBundle
                     Self::MEMBERSHIPS, 
                     Self::FILTERS,
                 ),
+                transform: Transform::default(),
             },
         }
     }
@@ -283,7 +287,7 @@ enum SensorInteraction
 // a. Bomb placement, by proximity to the player, typically
 fn sensor_collision_events(
     mut sensor_events: EventReader<SensorEvent>,
-    mut commands: Commands,
+    mut _commands: Commands,
     bomb_placers: Query<Entity, With<BombPromixityPlacer>>,
     // placer_imgs: Query<(Entity, &Children), With<BombPromixityPlacer>>,
     mut bomb_img: Query<(Entity, &ChildOf, &mut Visibility), With<Bomb>>,
@@ -330,10 +334,11 @@ fn sensor_collision_events(
 
             for (ent, child_of, mut vis) in bomb_img.iter_mut()
             {
-                println!("child_of: {:?}", child_of);
+                // println!("child_of: {:?}", child_of);
+                info!("Child_of: {:?}", child_of);
                 // println!("child_of.parent(): {:?}", child_of.parent());
 
-                // if child_of.parent() == spot
+                if child_of.parent() == spot
                 {
                     println!("Tried to change visibility");
 
