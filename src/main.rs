@@ -52,8 +52,8 @@ fn setup_physics(mut commands: Commands) {
     ))
     .with_children(|ent|
     {
-        ent.spawn(BombPlaceSpotBundle::ball_with_radius(75.0))
-        .with_child((
+        ent.spawn(BombPlaceSpotBundle::ball_with_radius(75.0));
+        ent.spawn((
             Sprite::from_color(Color::Srgba(Srgba::RED), [20.0, 20.0].into()),
             Visibility::Hidden,
             Bomb,
@@ -290,7 +290,7 @@ fn sensor_collision_events(
     mut _commands: Commands,
     bomb_placers: Query<Entity, With<BombPromixityPlacer>>,
     // placer_imgs: Query<(Entity, &Children), With<BombPromixityPlacer>>,
-    mut bomb_img: Query<(Entity, &ChildOf, &mut Visibility), With<Bomb>>,
+    mut bomb_img: Query<(&mut Visibility, &ChildOf), With<Bomb>>,
     bomb_place_spots: Query<Entity, With<BombPlaceSpot>>,
 )
 {
@@ -304,65 +304,48 @@ fn sensor_collision_events(
             Or, add a reference to the placer on the spot?
          */
 
+        let placer = 
+        bomb_placers.get(a)
+        .or_else(|_| bomb_placers.get(b)).ok();
 
-        // case 1: a is a placer, b is a spot
-        let placer = bomb_placers.get(a);
-        let spot = bomb_place_spots.get(b);
-        if let (Ok(placer), Ok(spot)) = (placer, spot)
+        let spot =
+        bomb_place_spots.get(b)
+        .or_else(|_| bomb_place_spots.get(a)).ok();
+
+        #[allow(unused_variables)]
+        if let (Some(placer), Some(spot)) = (placer, spot)
         {
-            println!("case 1");
-            println!("Placer {:?} is near spot {:?}", placer, spot);
-            println!("Sensor interaction: {:?}", t);
-        }
-
-        // case 2: a is a spot, b is a placer
-        let placer = bomb_placers.get(b);
-        let spot = bomb_place_spots.get(a);
-        if let (Ok(placer), Ok(spot)) = (placer, spot)
-        {
-            println!("case 2");
-            println!("Placer {:?} is near spot {:?}", placer, spot);
-            println!("Sensor interaction: {:?}", t);
-
-            // println!("placer children? {:?}", placer_imgs.get(placer));
-            // if let Ok((e,c)) = placer_imgs.get(placer)
-            // {
-            //     println!("Children of placer: {:?}", c);
-            // }
-
-            println!("length of bomb_img query: {:?}", bomb_img.iter().len());
-
-            for (ent, child_of, mut vis) in bomb_img.iter_mut()
+            for (mut vis, child_of) in bomb_img.iter_mut()
             {
-                // println!("child_of: {:?}", child_of);
-                info!("Child_of: {:?}", child_of);
-                // println!("child_of.parent(): {:?}", child_of.parent());
-
                 if child_of.parent() == spot
                 {
-                    println!("Tried to change visibility");
-
                     use SensorInteraction::*;
-                    match t
-                    {
-                        Entered => *vis = Visibility::Inherited,
-                        Exited => *vis = Visibility::Hidden,
-                    };
+                    match t {
+                        Entered => *vis = Visibility::Visible,
+                        Exited => *vis = Visibility::Inherited,
+                    }
                 }
             }
-
-            // if let Ok((_, mut vis)) = bomb_img.get_mut(spot)
-            // {
-            //     println!("Tried to change visibility");
-
-            //     use SensorInteraction::*;
-            //     match t
-            //     {
-            //         Entered => *vis = Visibility::Inherited,
-            //         Exited => *vis = Visibility::Hidden,
-            //     };
-            // }
         }
+
+        // if let (Some((placer, placer_c)), Some((spot, spot_c))) = (placer, spot)
+        // {
+        //     info!("Found placer {:?} with children: {:?}, and spot {:?} with children: {:?}", 
+        //         placer, placer_c, spot, spot_c);
+
+        //     let Some(spot_c) = spot_c else { continue; };
+        //     for child in spot_c.iter()
+        //     {
+        //         if let Ok(mut vis) = bomb_img.get_mut(child)
+        //         {
+        //             use SensorInteraction::*;
+        //             match t {
+        //                 Entered => *vis = Visibility::Visible,
+        //                 Exited => *vis = Visibility::Inherited,
+        //             }
+        //         }
+        //     }
+        // }
 
         // case 3: not interested in this event right now
     }
