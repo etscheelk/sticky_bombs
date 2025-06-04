@@ -177,11 +177,11 @@ fn setup_physics(mut commands: Commands, assets: Res<AssetServer>) {
         // Restitution::coefficient(0.5),
         RigidBody::KinematicPositionBased,
         Velocity::default(),
-        Friction::coefficient(0.2),
-        Damping {
-            linear_damping: 0.2,
-            angular_damping: 0.2,
-        },
+        // Friction::coefficient(0.2),
+        // Damping {
+        //     linear_damping: 0.2,
+        //     angular_damping: 0.2,
+        // },
     ))
     .with_children(|ent|
     {
@@ -285,7 +285,7 @@ struct BombPromixityPlacer;
 struct Bomb;
 
 fn player_move(
-    mut players: Query<(&Velocity, &mut KinematicCharacterController, Option<&KinematicCharacterControllerOutput>), With<Player>>,
+    mut players: Query<(&Velocity, &mut Sprite, &mut KinematicCharacterController, Option<&KinematicCharacterControllerOutput>), With<Player>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     r_context_mut: Single<&mut RapierContextSimulation>,
     r_config: Single<&RapierConfiguration>,
@@ -301,7 +301,7 @@ fn player_move(
 
     let gravity = r_config.gravity;
 
-    for (vel, mut char, output) in players.iter_mut()
+    for (vel, mut spr, mut char, output) in players.iter_mut()
     {
         let ref mut vel = *velocity;
         
@@ -342,6 +342,15 @@ fn player_move(
             // new_vel
         };
 
+        if new_vel < 0.0
+        {
+            spr.flip_x = true;
+        }
+        else if new_vel > 0.0
+        {
+            spr.flip_x = false;
+        }
+
         // new_vel = new_vel.clamp(-PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
         (*velocity).linvel.x = new_vel;
 
@@ -353,16 +362,15 @@ fn player_move(
             }
             else
             {
-                (*velocity).linvel += gravity * time.delta_secs();
+                (*velocity).linvel += 2.0 * gravity * time.delta_secs();
             }
             // println!("Player output: {:#?}", output);
 
             if keyboard.just_pressed(KeyCode::ArrowUp) && output.grounded
             {
                 println!("Player jumped!");
-                (*velocity).linvel.y = 60.0;
+                (*velocity).linvel.y = 120.0;
             }
-
         }
 
 
