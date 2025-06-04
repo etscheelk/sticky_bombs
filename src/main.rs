@@ -285,7 +285,7 @@ struct BombPromixityPlacer;
 struct Bomb;
 
 fn player_move(
-    mut players: Query<(&mut Velocity, &mut KinematicCharacterController, Option<&KinematicCharacterControllerOutput>), With<Player>>,
+    mut players: Query<(&Velocity, &mut KinematicCharacterController, Option<&KinematicCharacterControllerOutput>), With<Player>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     r_context_mut: Single<&mut RapierContextSimulation>,
     r_config: Single<&RapierConfiguration>,
@@ -301,14 +301,15 @@ fn player_move(
 
     let gravity = r_config.gravity;
 
-    for (mut vel, mut char, output) in players.iter_mut()
+    for (vel, mut char, output) in players.iter_mut()
     {
         let ref mut vel = *velocity;
+        
+        let mut new_vel: f32 = 0.0;
 
-        let mut new_vel = 0.0;
         let left = keyboard.pressed(KeyCode::ArrowLeft);
         let right = keyboard.pressed(KeyCode::ArrowRight);
-        let new_vel = if left || right
+        if left || right
         {
             let sign: f32 = if left { -1.0 } else { 1.0 };
             let mut acc = PLAYER_ACCEL;
@@ -318,27 +319,31 @@ fn player_move(
             }
             acc *= sign;
 
-            new_vel = acc * time.delta_secs();
+            new_vel = vel.linvel.x + acc * time.delta_secs();
             new_vel = new_vel.clamp(-PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
 
-            new_vel
+            // new_vel = acc * time.delta_secs();
+            // new_vel = new_vel.clamp(-PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
+
+            // new_vel
         }
         else 
         {
-            let mut new_vel = 0.0;
-            let ref mut vel = *velocity;
+            // let mut new_vel = 0.0;
+            // let ref mut vel = *velocity;
             if vel.linvel.x.abs() > 0.0
             {
                 let sign = vel.linvel.x.signum();
-                new_vel = -sign * PLAYER_DECEL * time.delta_secs();
+                new_vel = vel.linvel.x - sign * PLAYER_DECEL * time.delta_secs();
+                if new_vel.signum() != sign { new_vel = 0.0; }
                 // if new_vel.signum() != sign { new_vel = -vel.linvel.x * 0.2; }
             }    
 
-            new_vel
+            // new_vel
         };
 
         // new_vel = new_vel.clamp(-PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
-        (*velocity).linvel.x += new_vel;
+        (*velocity).linvel.x = new_vel;
 
         if let Some(output) = output
         {
