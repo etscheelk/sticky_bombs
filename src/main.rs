@@ -293,8 +293,9 @@ fn player_move(
     mut velocity: Local<Velocity>,
 )
 {
-    const PLAYER_ACCEL: f32 = 180.0;
-    const PLAYER_MAX_SPEED: f32 = 100.0;
+    const PLAYER_ACCEL: f32 = 360.0;
+    const PLAYER_DECEL: f32 = 1000.0;
+    const PLAYER_MAX_SPEED: f32 = 160.0;
 
     // println!("Player move system running. Number of player queries found: {:?}", players.iter().count());
 
@@ -302,27 +303,41 @@ fn player_move(
 
     for (mut vel, mut char, output) in players.iter_mut()
     {
+        let ref mut vel = *velocity;
+
         let mut new_vel = 0.0;
-        if keyboard.pressed(KeyCode::ArrowLeft)
+        let left = keyboard.pressed(KeyCode::ArrowLeft);
+        let right = keyboard.pressed(KeyCode::ArrowRight);
+        let new_vel = if left || right
         {
-            // let mut new_vel = PLAYER_ACCEL * time.delta_secs();
-            
-            new_vel -= PLAYER_ACCEL * time.delta_secs();
+            let sign: f32 = if left { -1.0 } else { 1.0 };
+            let mut acc = PLAYER_ACCEL;
+            if vel.linvel.x.signum() != sign.signum()
+            {
+                acc = f32::max(PLAYER_ACCEL, PLAYER_DECEL);
+            }
+            acc *= sign;
 
-            // (*velocity).linvel.x -= PLAYER_ACCEL * time.delta_secs();       
-        }
-        else if keyboard.pressed(KeyCode::ArrowRight)
-        {
-            new_vel += PLAYER_ACCEL * time.delta_secs();
+            new_vel = acc * time.delta_secs();
+            new_vel = new_vel.clamp(-PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
 
-            // (*velocity).linvel.x += PLAYER_ACCEL * time.delta_secs();
+            new_vel
         }
         else 
         {
-            // (*velocity).linvel.x *= 0.9; // Dampen the velocity when not moving
-        }
+            let mut new_vel = 0.0;
+            let ref mut vel = *velocity;
+            if vel.linvel.x.abs() > 0.0
+            {
+                let sign = vel.linvel.x.signum();
+                new_vel = -sign * PLAYER_DECEL * time.delta_secs();
+                // if new_vel.signum() != sign { new_vel = -vel.linvel.x * 0.2; }
+            }    
 
-        new_vel = new_vel.clamp(-PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
+            new_vel
+        };
+
+        // new_vel = new_vel.clamp(-PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
         (*velocity).linvel.x += new_vel;
 
         if let Some(output) = output
