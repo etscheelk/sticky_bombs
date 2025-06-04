@@ -15,7 +15,9 @@ fn main() {
     .add_plugins(RapierDebugRenderPlugin::default())
     .add_systems(Startup, setup_graphics)
     .add_systems(Startup, setup_physics)
-    .add_systems(Update, (print_ball_altitude, ball_jump, player_move, fit_canvas))
+    // .add_systems(FixedUpdate, player_move)
+    .add_systems(Update, player_move)
+    .add_systems(Update, (print_ball_altitude, ball_jump, fit_canvas))
     .add_systems(Update, (diverge_collision_events, sensor_collision_events).chain())
     .run();
 }
@@ -163,6 +165,7 @@ fn setup_physics(mut commands: Commands, assets: Res<AssetServer>) {
                 max_height: CharacterLength::Relative(0.25),
                 min_width: CharacterLength::Relative(0.5),
             }),
+            snap_to_ground: None,
             ..Default::default()
         },
         Sprite::from_image(
@@ -170,15 +173,15 @@ fn setup_physics(mut commands: Commands, assets: Res<AssetServer>) {
         ),
         PIXEL_PERFECT_LAYERS,
         Transform::from_xyz(120.0, 60.0, 0.0),
-        Velocity::default(),
         Collider::cuboid(6.0, 8.0),
         // Restitution::coefficient(0.5),
         RigidBody::KinematicPositionBased,
+        Velocity::default(),
         Friction::coefficient(0.2),
         Damping {
             linear_damping: 0.2,
             angular_damping: 0.2,
-        }
+        },
     ))
     .with_children(|ent|
     {
@@ -282,42 +285,68 @@ struct BombPromixityPlacer;
 struct Bomb;
 
 fn player_move(
-    mut players: Query<(&mut KinematicCharacterController, &mut Velocity), With<Player>>,
+    mut players: Query<(&mut Velocity, &mut KinematicCharacterController, Option<&KinematicCharacterControllerOutput>), With<Player>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     r_context_mut: Single<&mut RapierContextSimulation>,
     r_config: Single<&RapierConfiguration>,
     time: Res<Time>,
+    mut velocity: Local<Velocity>,
 )
 {
-    // let a = r_context_mut.into_inner();
+    const PLAYER_ACCEL: f32 = 180.0;
+    const PLAYER_MAX_SPEED: f32 = 100.0;
+
+    // println!("Player move system running. Number of player queries found: {:?}", players.iter().count());
 
     let gravity = r_config.gravity;
 
-    for (mut player, mut vel) in players.iter_mut()
+    for (mut vel, mut char, output) in players.iter_mut()
     {
-        let mut init_vel = vel.clone();
-
-        let mut translation = Vec2::ZERO;
+        let mut new_vel = 0.0;
         if keyboard.pressed(KeyCode::ArrowLeft)
         {
-            init_vel.linvel.x -= 10.0;
+            // let mut new_vel = PLAYER_ACCEL * time.delta_secs();
+            
+            new_vel -= PLAYER_ACCEL * time.delta_secs();
+
+            // (*velocity).linvel.x -= PLAYER_ACCEL * time.delta_secs();       
         }
-        if keyboard.pressed(KeyCode::ArrowRight)
+        else if keyboard.pressed(KeyCode::ArrowRight)
         {
-            init_vel.linvel.x += 10.0;
+            new_vel += PLAYER_ACCEL * time.delta_secs();
+
+            // (*velocity).linvel.x += PLAYER_ACCEL * time.delta_secs();
         }
-        if keyboard.just_pressed(KeyCode::ArrowUp)
+        else 
         {
-            init_vel.linvel.y += 20.0;
+            // (*velocity).linvel.x *= 0.9; // Dampen the velocity when not moving
         }
 
-        init_vel.linvel += gravity * time.delta_secs();
+        new_vel = new_vel.clamp(-PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
+        (*velocity).linvel.x += new_vel;
 
-        translation += init_vel.linvel * time.delta_secs();
+        if let Some(output) = output
+        {
+            if output.grounded
+            {
+                (*velocity).linvel.y = 0.0; // Reset vertical velocity when grounded
+            }
+            else
+            {
+                (*velocity).linvel += gravity * time.delta_secs();
+            }
+            // println!("Player output: {:#?}", output);
 
-        // *vel = init_vel;
-        // player.translation = Some([0.0, -1.0].into());
-        player.translation = Some(translation);
+            if keyboard.just_pressed(KeyCode::ArrowUp) && output.grounded
+            {
+                println!("Player jumped!");
+                (*velocity).linvel.y = 60.0;
+            }
+
+        }
+
+
+        char.translation = Some((*velocity).linvel * time.delta_secs());
     }
 
     
@@ -425,7 +454,6 @@ fn sensor_collision_events(
             {
                 if let Ok(mut vis) = bomb_img.get_mut(child)
                 {
-
                     use SensorInteraction::*;
                     match t {
                         Entered => *vis = Visibility::Inherited,
@@ -433,44 +461,7 @@ fn sensor_collision_events(
                     }
                 }
             }
-            // println!("Found placer {:#?} and spot {:#?}", placer, spot);
         }
-
-        // child_of version
-        // #[allow(unused_variables)]
-        // if let (Some(placer), Some(spot)) = (placer, spot)
-        // {
-        //     for (mut vis, child_of) in bomb_img.iter_mut()
-        //     {
-        //         if child_of.parent() == spot
-        //         {
-        //             use SensorInteraction::*;
-        //             match t {
-        //                 Entered => *vis = Visibility::Visible,
-        //                 Exited => *vis = Visibility::Inherited,
-        //             }
-        //         }
-        //     }
-        // }
-
-        // if let (Some((placer, placer_c)), Some((spot, spot_c))) = (placer, spot)
-        // {
-        //     info!("Found placer {:?} with children: {:?}, and spot {:?} with children: {:?}", 
-        //         placer, placer_c, spot, spot_c);
-
-        //     let Some(spot_c) = spot_c else { continue; };
-        //     for child in spot_c.iter()
-        //     {
-        //         if let Ok(mut vis) = bomb_img.get_mut(child)
-        //         {
-        //             use SensorInteraction::*;
-        //             match t {
-        //                 Entered => *vis = Visibility::Visible,
-        //                 Exited => *vis = Visibility::Inherited,
-        //             }
-        //         }
-        //     }
-        // }
 
         // case 3: not interested in this event right now
     }
