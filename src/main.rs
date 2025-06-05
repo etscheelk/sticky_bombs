@@ -1,5 +1,7 @@
 use bevy::prelude::*;
-use bevy::color::palettes::css::GRAY;
+
+use bevy::color::palettes::css as css_colors;
+
 use bevy::render::camera::RenderTarget;
 use bevy::render::render_resource::{Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages};
 use bevy::render::view::RenderLayers;
@@ -22,6 +24,12 @@ fn main() {
     .run();
 }
 
+// Constants for collision groups and layers
+const GROUP_NORMAL_TERRAIN:         Group = Group::GROUP_1;
+const GROUP_PLAYER:                 Group = Group::GROUP_2;
+const GROUP_PROXIMITY_PLACE_SPOT:   Group = Group::GROUP_31;
+const GROUP_PROXIMITY_PLACER:       Group = Group::GROUP_32;
+
 const RES_WIDTH: f32 = 640.0;
 const RES_HEIGHT: f32 = 360.0;
 
@@ -41,7 +49,6 @@ struct InGameCamera;
 /// Camera that renders the [`Canvas`] (and other graphics on [`HIGH_RES_LAYERS`]) to the screen.
 #[derive(Component)]
 struct OuterCamera;
-
 
 fn setup_graphics(
     mut commands: Commands,
@@ -82,7 +89,7 @@ fn setup_graphics(
         Camera {
             order: -1,
             target: RenderTarget::Image(image_handle.clone().into()),
-            clear_color: ClearColorConfig::Custom(GRAY.into()),
+            clear_color: ClearColorConfig::Custom(css_colors::GRAY.into()),
             ..default()
         },
         Msaa::Off,
@@ -139,49 +146,35 @@ fn setup_physics(mut commands: Commands, assets: Res<AssetServer>) {
             angular_damping: 0.9,
         },
     ))
-    .with_children(|ent|
+    .with_children(|parent|
     {
-        ent.spawn(BombPlaceSpotBundle::ball_with_radius(20.0))
+        parent.spawn(BombPlaceSpotBundle::ball_with_radius(20.0))
         .with_child((
-            Sprite::from_color(Color::Srgba(Srgba::RED), [8.0, 8.0].into()),
+            Sprite::from_color(css_colors::DARK_RED, [8.0, 8.0].into()),
             Visibility::Hidden,
             Bomb,
             Transform::default(),
         ));
-        // ent.spawn((
-        //     Sprite::from_color(Color::Srgba(Srgba::RED), [20.0, 20.0].into()),
-        //     Visibility::Hidden,
-        //     Bomb,
-        //     Transform::default(),
-        // ));
     });
 
     commands.spawn((
         Player,
-        KinematicCharacterController {
-            apply_impulse_to_dynamic_bodies: true,
-            autostep: Some(CharacterAutostep {
-                include_dynamic_bodies: true,
-                max_height: CharacterLength::Relative(0.25),
-                min_width: CharacterLength::Relative(0.5),
-            }),
-            snap_to_ground: None,
-            ..Default::default()
-        },
-        Sprite::from_image(
-            assets.load("guy.png")
+        CharacterBundle::with_non_defaults(
+            KinematicCharacterController { 
+                slide: true,
+                autostep: Some(CharacterAutostep {
+                    include_dynamic_bodies: true,
+                    max_height: CharacterLength::Relative(0.25),
+                    min_width: CharacterLength::Relative(0.5),
+                }),
+                snap_to_ground: None,
+                apply_impulse_to_dynamic_bodies: true,
+                ..default()
+            }, 
+            Sprite::from_image(assets.load("guy.png")), 
+            Collider::cuboid(6.0, 8.0),
+            Transform::from_xyz(120.0, 60.0, 0.0),
         ),
-        PIXEL_PERFECT_LAYERS,
-        Transform::from_xyz(120.0, 60.0, 0.0),
-        Collider::cuboid(6.0, 8.0),
-        // Restitution::coefficient(0.5),
-        RigidBody::KinematicPositionBased,
-        Velocity::default(),
-        // Friction::coefficient(0.2),
-        // Damping {
-        //     linear_damping: 0.2,
-        //     angular_damping: 0.2,
-        // },
     ))
     .with_children(|ent|
     {
@@ -191,6 +184,34 @@ fn setup_physics(mut commands: Commands, assets: Res<AssetServer>) {
         //     Visibility::Hidden,
         //     Bomb
         // ));
+    });
+
+    commands.spawn((
+        Enemy,
+        Transform::from_xyz(-120.0, -12.0, 0.0),
+        Collider::default(),
+        RigidBody::Fixed,
+        Velocity::default(),
+        ActiveCollisionTypes::all()
+        // CharacterBundle::with_non_defaults(
+        //     KinematicCharacterController {
+        //         apply_impulse_to_dynamic_bodies: true,
+        //         ..default()
+        //     },
+        //     Sprite::from_color(css_colors::BLUE_VIOLET, [1.0, 1.0].into()),
+        //     Collider::cuboid(8.0, 8.0),
+        //     Transform::from_xyz(-120.0, -12.0, 0.0),
+        // ),
+    ))
+    .with_children(|parent|
+    {
+        parent.spawn(BombPlaceSpotBundle::ball_with_radius(24.0))
+        .with_child((
+            Sprite::from_color(css_colors::DARK_RED, [8.0, 8.0].into()),
+            Visibility::Hidden,
+            Bomb,
+            Transform::default(),
+        ));
     });
 
     commands.insert_resource(Events::<SensorEvent>::default());
@@ -204,7 +225,8 @@ struct SensorBundle
     active_events: ActiveEvents,
     collision_groups: CollisionGroups,
     transform: Transform,
-    visibility: Visibility
+    visibility: Visibility,
+    active_collision_types: ActiveCollisionTypes,
 }
 
 #[derive(Bundle, Clone, Debug)]
@@ -216,8 +238,8 @@ struct BombPlaceSpotBundle
 
 impl BombPlaceSpotBundle
 {
-    const MEMBERSHIPS:  Group = Group::GROUP_32;
-    const FILTERS:      Group = Group::GROUP_2;
+    const MEMBERSHIPS:  Group = GROUP_PROXIMITY_PLACE_SPOT;
+    const FILTERS:      Group = GROUP_PROXIMITY_PLACER;
 
     fn ball_with_radius(radius: f32) -> Self
     {
@@ -232,7 +254,8 @@ impl BombPlaceSpotBundle
                     Self::FILTERS,
                 ),
                 transform: Transform::default(),
-                visibility: Visibility::Inherited
+                visibility: Visibility::Inherited,
+                active_collision_types: ActiveCollisionTypes::all(),
             },
         }
     }
@@ -243,12 +266,12 @@ struct BombPlacerBundle
 {
     bomb_proximity_placer: BombPromixityPlacer,
     sensor_bundle: SensorBundle,
-}
+} 
 
 impl BombPlacerBundle
 {
-    const MEMBERSHIPS:  Group = Group::GROUP_2;
-    const FILTERS:      Group = Group::GROUP_32;
+    const MEMBERSHIPS:  Group = GROUP_PROXIMITY_PLACER;
+    const FILTERS:      Group = GROUP_PROXIMITY_PLACE_SPOT;
 
     fn ball_with_radius(radius: f32) -> Self
     {
@@ -263,8 +286,42 @@ impl BombPlacerBundle
                     Self::FILTERS,
                 ),
                 transform: Transform::default(),
-                visibility: Visibility::Inherited
+                visibility: Visibility::Inherited,
+                active_collision_types: ActiveCollisionTypes::all(),
             },
+        }
+    }
+}
+
+#[derive(Bundle)]
+struct CharacterBundle
+{
+    character: KinematicCharacterController,
+    velocity: Velocity,
+    transform: Transform,
+    sprite: Sprite,
+    collider: Collider,
+    rigid_body: RigidBody,
+    layers: RenderLayers,
+    visibility: Visibility,
+    // TODO: ADD collision groups
+}
+
+impl CharacterBundle
+{
+    /// The fields not included have obvious default values. 
+    fn with_non_defaults(character: KinematicCharacterController, sprite: Sprite, collider: Collider, transform: Transform) -> Self
+    {
+        Self
+        {
+            character,
+            velocity: Velocity::default(),
+            transform,
+            sprite,
+            collider,
+            rigid_body: RigidBody::KinematicPositionBased,
+            layers: PIXEL_PERFECT_LAYERS,
+            visibility: Visibility::Inherited,
         }
     }
 }
@@ -281,13 +338,16 @@ struct Player;
 #[derive(Component, Clone, Copy, Debug)]
 struct BombPromixityPlacer;
 
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Component, Clone, Copy, Debug, Default)]
 struct Bomb;
+
+#[derive(Component, Clone, Copy, Debug, Default)]
+struct Enemy;
 
 fn player_move(
     mut players: Query<(&Velocity, &mut Sprite, &mut KinematicCharacterController, Option<&KinematicCharacterControllerOutput>), With<Player>>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    r_context_mut: Single<&mut RapierContextSimulation>,
+    // r_context_mut: Single<&mut RapierContextSimulation>,
     r_config: Single<&RapierConfiguration>,
     time: Res<Time>,
     mut velocity: Local<Velocity>,
@@ -407,22 +467,24 @@ fn ball_jump(
 
 fn diverge_collision_events(
     mut collision_events: EventReader<CollisionEvent>,
-    mut sensor_events: EventWriter<SensorEvent>,
-    mut commands: Commands,
+    mut sensor_event_writer: EventWriter<SensorEvent>,
+    // mut commands: Commands,
 ) 
 {
     for event in collision_events.read() {
+        println!("Collision event: {:?}", event);
+
         match *event {
             CollisionEvent::Started(a, b, t) => {
                 if t == CollisionEventFlags::SENSOR
                 {
-                    sensor_events.write(SensorEvent(a, b, SensorInteraction::Entered));
+                    sensor_event_writer.write(SensorEvent(a, b, SensorInteraction::Entered));
                 }
             }
             CollisionEvent::Stopped(a, b, t) => {
                 if t == CollisionEventFlags::SENSOR
                 {
-                    sensor_events.write(SensorEvent(a, b, SensorInteraction::Exited));
+                    sensor_event_writer.write(SensorEvent(a, b, SensorInteraction::Exited));
                 }
             }
         }
@@ -463,6 +525,9 @@ fn sensor_collision_events(
             Or, add a reference to the placer on the spot?
          */
 
+        println!("length of place spots: {}, length of bomb placers: {}", bomb_place_spots.iter().count(), bomb_placers.iter().count());
+        println!("Number of bomb_imgs: {}", bomb_img.iter().count());
+
         let placer = 
         bomb_placers.get(a)
         .or_else(|_| bomb_placers.get(b)).ok();
@@ -477,7 +542,7 @@ fn sensor_collision_events(
             Some((spot, spot_c))
         ) = (placer, spot)
         {
-            let Some(spot_c) = spot_c else { continue; };
+            let Some(spot_c) = spot_c else { println!("continue"); continue; };
             for child in spot_c.iter()
             {
                 if let Ok(mut vis) = bomb_img.get_mut(child)
