@@ -17,15 +17,12 @@ incremental = true
 opt-level = 3
 
 [dependencies]
-# bevy = { version = "0.16.1", features = ["dynamic_linking"] }
 bevy = { version = "0.16.1" }
 bevy_egui = "0.34.1"
 bevy_rapier2d = { version = "0.30.0", features = ["serde-serialize", "debug-render-2d"] }
 
-# [profile.release.dependencies]
-# bevy = { version = "0.16.1"}
-# bevy_egui = "0.34.1"
-# bevy_rapier2d = { version = "0.30.0", features = ["serde-serialize", "debug-render-2d"] }
+[features]
+dynamic_linking = ["bevy/dynamic_linking"]
 
 # These lints may be important signals about code quality, but normal Bevy code
 # commonly triggers them and the CI workflow treats them as errors, so we've
@@ -39,6 +36,7 @@ type_complexity = "allow"
 [profile.release]
 codegen-units = 1
 lto = "thin"
+
 
 [profile.wasm-release]
 inherits = "release"
